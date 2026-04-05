@@ -1,0 +1,31 @@
+# Web framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# Database
+sqlalchemy==2.0.35
+asyncpg==0.29.0
+alembic==1.13.2
+pgvector==0.3.2
+
+# PDF processing
+pypdf==4.3.1
+
+# OpenAI
+openai==1.51.0
+
+# Config & validation
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# File uploads
+python-multipart==0.0.12
+
+# HTTP client (used internally by openai sdk)
+httpx==0.27.2
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2

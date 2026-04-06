@@ -11,8 +11,8 @@ pgvector==0.3.2
 # PDF processing
 pypdf==4.3.1
 
-# OpenAI
-openai==1.51.0
+#Gemini
+google-generativeai==0.8.3
 
 # Config & validation
 pydantic==2.9.2
@@ -21,9 +21,6 @@ python-dotenv==1.0.1
 
 # File uploads
 python-multipart==0.0.12
-
-# HTTP client (used internally by openai sdk)
-httpx==0.27.2
 
 # Testing
 pytest==8.3.3

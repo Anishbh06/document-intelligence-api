@@ -1,24 +1,28 @@
-from openai import AsyncOpenAI
+import google.generativeai as genai
 from app.config import settings
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+genai.configure(api_key=settings.GEMINI_API_KEY)
 
-EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSIONS = 1536
+EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_DIMENSIONS = 768
 
 
 async def get_embedding(text: str) -> list[float]:
-    response = await client.embeddings.create(
+    result = genai.embed_content(
         model=EMBEDDING_MODEL,
-        input=text,
+        content=text,
+        task_type="retrieval_query",
     )
-    return response.data[0].embedding
+    return result["embedding"]
 
 
 async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    response = await client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=texts,
-    )
-    response.data.sort(key=lambda x: x.index)
-    return [item.embedding for item in response.data]
+    embeddings = []
+    for text in texts:
+        result = genai.embed_content(
+            model=EMBEDDING_MODEL,
+            content=text,
+            task_type="retrieval_document",
+        )
+        embeddings.append(result["embedding"])
+    return embeddings

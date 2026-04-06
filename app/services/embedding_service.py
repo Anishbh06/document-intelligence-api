@@ -1,28 +1,32 @@
-import google.generativeai as genai
+import httpx
 from app.config import settings
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
-
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
+BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+async def _get_embedding_rest(text: str, task_type: str) -> list[float]:
+    url = f"{BASE_URL}/{EMBEDDING_MODEL}:embedContent?key={settings.GEMINI_API_KEY}"
+    payload = {
+        "model": f"models/{EMBEDDING_MODEL}",
+        "content": {"parts": [{"text": text}]},
+        "taskType": task_type,
+        "outputDimensionality": EMBEDDING_DIMENSIONS,
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()["embedding"]["values"]
 
 
 async def get_embedding(text: str) -> list[float]:
-    result = genai.embed_content(
-        model=EMBEDDING_MODEL,
-        content=text,
-        task_type="retrieval_query",
-    )
-    return result["embedding"]
+    return await _get_embedding_rest(text, "RETRIEVAL_QUERY")
 
 
 async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
     embeddings = []
     for text in texts:
-        result = genai.embed_content(
-            model=EMBEDDING_MODEL,
-            content=text,
-            task_type="retrieval_document",
-        )
-        embeddings.append(result["embedding"])
+        embedding = await _get_embedding_rest(text, "RETRIEVAL_DOCUMENT")
+        embeddings.append(embedding)
     return embeddings

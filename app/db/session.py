@@ -4,9 +4,16 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.config import settings
 
 
+from sqlalchemy.pool import NullPool
+import sys
+
+engine_kwargs = {"echo": settings.APP_ENV == "development"}
+if "pytest" in sys.modules:
+    engine_kwargs["poolclass"] = NullPool
+
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.APP_ENV == "development",
+    **engine_kwargs
 )
 
 AsyncSessionLocal = sessionmaker(

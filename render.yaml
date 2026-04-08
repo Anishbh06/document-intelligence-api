@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: document-intelligence-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        sync: false

@@ -13,9 +13,9 @@ if "pytest" in sys.modules:
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    **engine_kwargs
+    echo=settings.APP_ENV == "development",
+    connect_args={"ssl": "require"} if "render.com" in settings.DATABASE_URL else {},
 )
-
 AsyncSessionLocal = sessionmaker(
     bind=engine,
     class_=AsyncSession,

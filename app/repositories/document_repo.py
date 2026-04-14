@@ -67,3 +67,9 @@ class DocumentRepository:
             .limit(top_k)
         )
         return result.scalars().all()
+
+        async def get_all_documents(self) -> list[Document]:
+    result = await self.db.execute(
+        select(Document).order_by(Document.created_at.desc())
+    )
+    return result.scalars().all()

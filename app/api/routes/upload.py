@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.schemas.document import UploadResponse, DocumentResponse
+from app.schemas.document import UploadResponse, DocumentResponse, DocumentListResponse
 from app.services.pdf_service import process_pdf
 from app.services.embedding_service import get_embeddings_batch
 from app.repositories.document_repo import DocumentRepository
@@ -18,8 +18,8 @@ async def upload_document(
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
-    if file.size and file.size > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File size must be under 10MB")
+    if file.size and file.size > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size must be under 50MB")
 
     cleaned_text, chunks = await process_pdf(file)
 
@@ -51,4 +51,28 @@ async def upload_document(
             created_at=document.created_at,
             chunk_count=chunk_count,
         )
+    )
+
+    @router.get("/documents", response_model=DocumentListResponse)
+async def list_documents(
+    db: AsyncSession = Depends(get_db),
+):
+    repo = DocumentRepository(db)
+    documents = await repo.get_all_documents()
+
+    document_responses = []
+    for doc in documents:
+        chunk_count = await repo.get_chunk_count(doc.id)
+        document_responses.append(
+            DocumentResponse(
+                id=doc.id,
+                filename=doc.filename,
+                created_at=doc.created_at,
+                chunk_count=chunk_count,
+            )
+        )
+
+    return DocumentListResponse(
+        documents=document_responses,
+        total=len(document_responses),
     )

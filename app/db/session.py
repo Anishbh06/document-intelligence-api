@@ -10,11 +10,12 @@ import sys
 engine_kwargs = {"echo": settings.APP_ENV == "development"}
 if "pytest" in sys.modules:
     engine_kwargs["poolclass"] = NullPool
+if "render.com" in settings.DATABASE_URL:
+    engine_kwargs["connect_args"] = {"ssl": "require"}
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.APP_ENV == "development",
-    connect_args={"ssl": "require"} if "render.com" in settings.DATABASE_URL else {},
+    **engine_kwargs,
 )
 AsyncSessionLocal = sessionmaker(
     bind=engine,

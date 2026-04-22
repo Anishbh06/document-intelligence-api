@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import APIError
+from app.core.security import require_api_key
 from app.db.session import get_db
 from app.schemas.document import QueryRequest, QueryResponse, DocumentChunkResponse
 from app.services.embedding_service import get_embedding
@@ -13,13 +15,14 @@ router = APIRouter()
 @router.post("/query", response_model=QueryResponse)
 async def query_document(
     request: QueryRequest,
+    _: None = Depends(require_api_key),
     db: AsyncSession = Depends(get_db),
 ):
     repo = DocumentRepository(db)
 
     document = await repo.get_document(request.document_id)
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise APIError(status_code=404, code="document_not_found", message="Document not found")
 
     query_embedding = await get_embedding(request.question)
 
@@ -30,7 +33,11 @@ async def query_document(
     )
 
     if not similar_chunks:
-        raise HTTPException(status_code=404, detail="No content found in document")
+        raise APIError(
+            status_code=404,
+            code="no_document_content",
+            message="No content found in document",
+        )
 
     answer = await generate_answer(request.question, similar_chunks)
 

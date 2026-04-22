@@ -11,10 +11,12 @@ class DocumentRepository:
     async def create_document(
         self,
         filename: str,
+        content_hash: str,
         original_text: str,
     ) -> Document:
         document = Document(
             filename=filename,
+            content_hash=content_hash,
             original_text=original_text,
         )
         self.db.add(document)
@@ -46,6 +48,12 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_document_by_hash(self, content_hash: str) -> Document | None:
+        result = await self.db.execute(
+            select(Document).where(Document.content_hash == content_hash)
+        )
+        return result.scalar_one_or_none()
+
     async def get_chunk_count(self, document_id: int) -> int:
         result = await self.db.execute(
             select(func.count(DocumentChunk.id)).where(
@@ -67,3 +75,17 @@ class DocumentRepository:
             .limit(top_k)
         )
         return result.scalars().all()
+
+    async def get_all_documents(self) -> list[Document]:
+        result = await self.db.execute(
+            select(Document).order_by(Document.created_at.desc())
+        )
+        return result.scalars().all()
+
+    async def delete_document(self, document_id: int) -> bool:
+        document = await self.get_document(document_id)
+        if document:
+            await self.db.delete(document)
+            await self.db.flush()
+            return True
+        return False

@@ -21,5 +21,5 @@ Question: {question}
 Answer:"""
 
     model = genai.GenerativeModel(GENERATION_MODEL)
-    response = model.generate_content(prompt)
+    response = await model.generate_content_async(prompt)
     return response.text

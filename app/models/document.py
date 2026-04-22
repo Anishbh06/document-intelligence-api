@@ -11,6 +11,12 @@ class Document(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

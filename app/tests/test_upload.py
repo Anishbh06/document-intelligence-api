@@ -1,7 +1,9 @@
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.config import settings
+
+TEST_HEADERS = {"X-API-Key": settings.GEMINI_API_KEY}
 
 
 # ---------------------------------------------------------------
@@ -53,14 +55,15 @@ async def test_upload_valid_pdf(pdf_bytes):
             response = await client.post(
                 "/api/v1/upload",
                 files={"file": ("test.pdf", f, "application/pdf")},
+                headers=TEST_HEADERS,
             )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "Document uploaded and processed successfully"
-    assert data["document"]["filename"] == "test.pdf"
-    assert data["document"]["id"] > 0
-    assert data["document"]["chunk_count"] >= 1
+    assert "job" in data
+    assert data["job"]["filename"] == "test.pdf"
+    assert data["job"]["id"] > 0
+    assert data["job"]["status"] in {"pending", "processing", "completed"}
 
 
 @pytest.mark.asyncio
@@ -71,10 +74,11 @@ async def test_upload_non_pdf():
         response = await client.post(
             "/api/v1/upload",
             files={"file": ("notes.txt", b"just some text", "text/plain")},
+            headers=TEST_HEADERS,
         )
 
     assert response.status_code == 400
-    assert "PDF" in response.json()["detail"]
+    assert "PDF" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -86,14 +90,15 @@ async def test_upload_response_fields(pdf_bytes):
             response = await client.post(
                 "/api/v1/upload",
                 files={"file": ("test.pdf", f, "application/pdf")},
+                headers=TEST_HEADERS,
             )
 
     assert response.status_code == 200
-    doc = response.json()["document"]
+    job = response.json()["job"]
 
     # Every field must be present and the right type
-    assert isinstance(doc["id"], int)
-    assert isinstance(doc["filename"], str)
-    assert isinstance(doc["created_at"], str)   # ISO datetime string
-    assert isinstance(doc["chunk_count"], int)
-    assert doc["chunk_count"] >= 1
+    assert isinstance(job["id"], int)
+    assert isinstance(job["filename"], str)
+    assert isinstance(job["created_at"], str)
+    assert isinstance(job["updated_at"], str)
+    assert isinstance(job["progress"], int)

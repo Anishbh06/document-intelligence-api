@@ -32,3 +32,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     citations: list[DocumentChunkResponse]
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentResponse]
+    total: int

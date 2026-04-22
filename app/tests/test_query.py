@@ -1,6 +1,9 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.config import settings
+
+TEST_HEADERS = {"X-API-Key": settings.GEMINI_API_KEY}
 
 
 # ---------------------------------------------------------------
@@ -52,9 +55,22 @@ async def upload_pdf(client, pdf_bytes) -> int:
         response = await client.post(
             "/api/v1/upload",
             files={"file": ("novatech.pdf", f, "application/pdf")},
+            headers=TEST_HEADERS,
         )
     assert response.status_code == 200, f"Upload failed: {response.text}"
-    return response.json()["document"]["id"]
+    return response.json()["job"]["id"]
+
+
+async def wait_for_document_id(client, job_id: int, retries: int = 30) -> int:
+    for _ in range(retries):
+        response = await client.get(f"/api/v1/jobs/{job_id}", headers=TEST_HEADERS)
+        assert response.status_code == 200, f"Job lookup failed: {response.text}"
+        payload = response.json()
+        if payload["status"] == "completed" and payload["document_id"]:
+            return payload["document_id"]
+        if payload["status"] == "failed":
+            raise AssertionError(f"Job failed: {payload.get('error_message')}")
+    raise AssertionError("Timed out waiting for document processing")
 
 
 @pytest.mark.asyncio
@@ -62,11 +78,13 @@ async def test_query_returns_answer(pdf_bytes):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        doc_id = await upload_pdf(client, pdf_bytes)
+        job_id = await upload_pdf(client, pdf_bytes)
+        doc_id = await wait_for_document_id(client, job_id)
 
         response = await client.post(
             "/api/v1/query",
             json={"document_id": doc_id, "question": "What is this document about?"},
+            headers=TEST_HEADERS,
         )
 
     assert response.status_code == 200
@@ -84,11 +102,13 @@ async def test_query_citations_shape(pdf_bytes):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        doc_id = await upload_pdf(client, pdf_bytes)
+        job_id = await upload_pdf(client, pdf_bytes)
+        doc_id = await wait_for_document_id(client, job_id)
 
         response = await client.post(
             "/api/v1/query",
             json={"document_id": doc_id, "question": "Summarise this document."},
+            headers=TEST_HEADERS,
         )
 
     assert response.status_code == 200
@@ -109,10 +129,11 @@ async def test_query_document_not_found():
         response = await client.post(
             "/api/v1/query",
             json={"document_id": 999999, "question": "Does this exist?"},
+            headers=TEST_HEADERS,
         )
 
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
+    assert "not found" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -120,6 +141,6 @@ async def test_query_missing_fields():
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.post("/api/v1/query", json={})
+        response = await client.post("/api/v1/query", json={}, headers=TEST_HEADERS)
 
     assert response.status_code == 422  # FastAPI validation error

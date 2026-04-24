@@ -48,6 +48,30 @@ app.include_router(query.router,  prefix="/api/v1", tags=["Query"])
 app.include_router(jobs.router,   prefix="/api/v1", tags=["Jobs"])
 
 
+@app.on_event("startup")
+async def on_startup():
+    from app.db.session import engine
+    from app.models.user import User
+    from sqlalchemy import inspect
+    import logging
+
+    logger = logging.getLogger(__name__)
+    
+    # Force a check if tables exist
+    def check_and_create():
+        inspector = inspect(engine.sync_engine)
+        if not inspector.has_table("users"):
+            logger.warning("🚀 Table 'users' missing! Forcing creation...")
+            from app.db.base import Base
+            Base.metadata.create_all(bind=engine.sync_engine)
+            logger.info("✅ Database tables created successfully.")
+        else:
+            logger.info("✅ Database tables verified.")
+
+    from anyio import to_thread
+    await to_thread.run_sync(check_and_create)
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "version": "3.0.0"}

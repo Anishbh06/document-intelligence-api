@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import APIError
-from app.core.security import require_api_key
+from app.core.security import get_current_user
 from app.db.session import get_db
+from app.models.user import User
 from app.repositories.document_repo import DocumentRepository
 from app.repositories.job_repo import JobRepository
 from app.schemas.document import DocumentResponse
@@ -20,7 +21,7 @@ router = APIRouter()
 @router.post("/upload", response_model=UploadJobResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    _: None = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     filename = file.filename or ""
@@ -56,7 +57,8 @@ async def upload_document(
             job=JobResponse.model_validate(existing_job),
         )
 
-    existing_document = await document_repo.get_document_by_hash(content_hash)
+    # Dedup is per-user — two different users can own the same file independently
+    existing_document = await document_repo.get_document_by_hash(content_hash, owner_id=current_user.id)
     if existing_document:
         job = await job_repo.create_job(filename=filename, content_hash=content_hash)
         job.status = "completed"
@@ -72,7 +74,8 @@ async def upload_document(
     job = await job_repo.create_job(filename=filename, content_hash=content_hash)
 
     pdf_bytes_b64 = base64.b64encode(file_bytes).decode("utf-8")
-    process_document.delay(job.id, pdf_bytes_b64, filename, content_hash)
+    # Pass owner_id so the Celery worker can stamp the document with the right owner
+    process_document.delay(job.id, pdf_bytes_b64, filename, content_hash, current_user.id)
 
     return UploadJobResponse(
         message="Document upload received. Processing in background.",
@@ -93,11 +96,11 @@ async def upload_document(
 
 @router.get("/documents", response_model=dict)
 async def list_documents(
-    _: None = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repo = DocumentRepository(db)
-    documents = await repo.get_all_documents()
+    documents = await repo.get_all_documents(owner_id=current_user.id)
 
     document_responses = []
     for doc in documents:
@@ -117,17 +120,15 @@ async def list_documents(
 @router.delete("/documents/{document_id}", response_model=dict)
 async def delete_document(
     document_id: int,
-    _: None = Depends(require_api_key),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     document_repo = DocumentRepository(db)
     job_repo = JobRepository(db)
 
-    # Clean up associated jobs first
     await job_repo.delete_jobs_by_document_id(document_id)
-
-    # Delete the document (cascade will handle chunks)
-    success = await document_repo.delete_document(document_id)
+    # owner_id check ensures users can only delete their own documents
+    success = await document_repo.delete_document(document_id, owner_id=current_user.id)
 
     if not success:
         raise APIError(

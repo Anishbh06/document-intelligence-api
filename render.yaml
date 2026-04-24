@@ -1,17 +1,134 @@
+################################################################################
+#  render.yaml — Document Intelligence API v3.0.0
+#
+#  Services defined here:
+#    1. migrate         — one-shot job: runs Alembic migrations before API starts
+#    2. api             — FastAPI web service (main entry point)
+#    3. celery-worker   — background task processor
+#    4. redis           — in-memory broker + rate-limit store
+#
+#  How to deploy:
+#    1. Connect your GitHub repo in the Render dashboard.
+#    2. Render will detect this file automatically.
+#    3. Set all `sync: false` environment variables in the Render dashboard
+#       (Environment tab) before the first deploy.
+#    4. The `migrate` job will run automatically before the API starts.
+#
+#  Required env vars (set in dashboard, never commit values):
+#    DATABASE_URL      — postgres://user:pass@host/dbname  (from Render Postgres)
+#    SECRET_KEY        — random 64-char hex string for JWT signing
+#    GEMINI_API_KEY    — your Google AI Studio key
+#    REDIS_URL         — redis://user:pass@host:port        (from Render Redis)
+#    CELERY_BROKER_URL — same as REDIS_URL (or separate broker)
+#
+################################################################################
+
 services:
+
+  # ── 1. Database migration (one-shot job) ────────────────────────────────────
+  - type: worker            # 'worker' runs once and exits; Render marks it done
+    name: migrate
+    runtime: docker
+    region: singapore
+    branch: main
+    plan: starter           # cheapest plan sufficient for a migration job
+    dockerCommand: alembic upgrade head
+    envVars:
+      - key: DATABASE_URL
+        sync: false         # paste value in Render dashboard
+
+  # ── 2. FastAPI web service ───────────────────────────────────────────────────
   - type: web
     name: document-intelligence-api
     runtime: docker
-    plan: free
     region: singapore
     branch: main
+    plan: starter
     healthCheckPath: /health
+    # Render auto-detects the Dockerfile; override CMD if needed:
+    # dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: SECRET_KEY
+        sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
         sync: false
       - key: APP_ENV
         value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "1440"       # 24 hours
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "20"
+      - key: RATE_LIMIT_REQUESTS
+        value: "60"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      # Render assigns PORT automatically — FastAPI must bind to 0.0.0.0:$PORT
+      - key: PORT
+        value: "10000"
+      # Set to your Vercel frontend URL after deploying the frontend.
+      # Example: https://your-app.vercel.app
+      # Comma-separate multiple origins if needed.
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+
+  # ── 3. Celery worker ─────────────────────────────────────────────────────────
+  - type: worker
+    name: document-intelligence-celery
+    runtime: docker
+    region: singapore
+    branch: main
+    plan: starter
+    dockerCommand: celery -A app.celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - key: DATABASE_URL
+        sync: false
       - key: SECRET_KEY
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: APP_ENV
+        value: production
+
+  # ── 4. Redis (Render-managed) ────────────────────────────────────────────────
+  #  Render's managed Redis service — uncomment if you want Render to provision
+  #  Redis for you.  Alternatively, use Upstash Redis (free tier available) and
+  #  set REDIS_URL manually.
+  #
+  # - type: redis
+  #   name: document-intelligence-redis
+  #   region: singapore
+  #   plan: free
+  #   maxmemoryPolicy: allkeys-lru
+
+databases:
+  # ── 5. PostgreSQL (Render-managed) ──────────────────────────────────────────
+  #  Render will provision a Postgres instance and inject DATABASE_URL
+  #  automatically into services that reference it by `fromDatabase`.
+  #  Uncomment and set `fromDatabase` on each service to use this instead of
+  #  a manually pasted DATABASE_URL.
+  #
+  # - name: doc-intelligence-db
+  #   databaseName: doc_intelligence
+  #   user: postgres
+  #   region: singapore
+  #   plan: free
+  #   postgresMajorVersion: 16

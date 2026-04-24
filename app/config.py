@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     APP_ENV: str = "development"
     SECRET_KEY: str = "changeme"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60
 
     class Config:
         env_file = ".env"

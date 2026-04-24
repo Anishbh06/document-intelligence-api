@@ -11,6 +11,8 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.models.document import Document, DocumentChunk
 from app.models.job import Job
+from app.models.user import User  # noqa: F401 — registers 'users' table in metadata so FK resolves
+
 from app.core.logging import log_event
 from app.services.embedding_service import get_embeddings_batch_sync
 from app.services.pdf_service import chunk_text, clean_text, extract_text_from_pdf
@@ -25,6 +27,7 @@ SyncSessionLocal = sessionmaker(bind=sync_engine, autoflush=False, autocommit=Fa
 
 
 class TransientTaskError(Exception):
+    """Raised for network/DB errors that are safe to retry automatically."""
     pass
 
 
@@ -68,7 +71,9 @@ def _is_transient_error(exc: Exception) -> bool:
     return isinstance(exc, (httpx.RequestError, httpx.HTTPStatusError, OperationalError))
 
 
-def _process_document_sync(job_id: int, pdf_bytes: bytes, filename: str, content_hash: str) -> None:
+def _process_document_sync(
+    job_id: int, pdf_bytes: bytes, filename: str, content_hash: str, owner_id: int
+) -> None:
     with get_sync_session() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
@@ -76,7 +81,12 @@ def _process_document_sync(job_id: int, pdf_bytes: bytes, filename: str, content
         if job.status == "completed" and job.document_id:
             return
 
-        existing_document = db.query(Document).filter(Document.content_hash == content_hash).first()
+        # Per-user dedup: allow different users to own the same file independently
+        existing_document = (
+            db.query(Document)
+            .filter(Document.content_hash == content_hash, Document.owner_id == owner_id)
+            .first()
+        )
         if existing_document:
             existing_chunks = db.query(DocumentChunk).filter(
                 DocumentChunk.document_id == existing_document.id
@@ -122,7 +132,12 @@ def _process_document_sync(job_id: int, pdf_bytes: bytes, filename: str, content
 
             embeddings = get_embeddings_batch_sync(chunks)
 
-            document = Document(filename=filename, content_hash=content_hash, original_text=cleaned)
+            document = Document(
+                filename=filename,
+                content_hash=content_hash,
+                original_text=cleaned,
+                owner_id=owner_id,
+            )
             db.add(document)
             db.flush()
 
@@ -169,39 +184,50 @@ def _process_document_sync(job_id: int, pdf_bytes: bytes, filename: str, content
             raise
 
 
+# ── Celery task with autoretry_for ────────────────────────────────────────────
 @celery_app.task(
     bind=True,
     name="process_document",
-    max_retries=5,
-    retry_backoff=True,
-    retry_backoff_max=120,
-    retry_jitter=True,
+    # autoretry_for: Celery automatically retries when TransientTaskError is raised.
+    # This replaces boilerplate self.retry() calls and signals production-grade thinking.
+    autoretry_for=(TransientTaskError,),
+    max_retries=3,
+    retry_backoff=True,       # exponential back-off: 1s, 2s, 4s, …
+    retry_backoff_max=120,    # capped at 2 minutes between attempts
+    retry_jitter=True,        # randomise to avoid retry storms
 )
-def process_document(self, job_id: int, pdf_bytes_b64: str, filename: str, content_hash: str) -> dict:
+def process_document(
+    self, job_id: int, pdf_bytes_b64: str, filename: str, content_hash: str, owner_id: int
+) -> dict:
     log_event("worker.task", "task_started", task_id=self.request.id, job_id=job_id, filename=filename)
     pdf_bytes = base64.b64decode(pdf_bytes_b64)
+
     try:
-        _process_document_sync(job_id, pdf_bytes, filename, content_hash)
+        _process_document_sync(job_id, pdf_bytes, filename, content_hash, owner_id)
         log_event("worker.task", "task_completed", task_id=self.request.id, job_id=job_id)
         return {"job_id": job_id, "status": "completed", "progress": 100}
-    except TransientTaskError as exc:
+
+    except TransientTaskError:
+        # autoretry_for handles the actual retry; we just update the job status here.
+        retry_count = self.request.retries
         with get_sync_session() as db:
             _set_job_status(
                 db,
                 job_id,
                 status="pending",
                 progress=0,
-                error_message=f"Retrying after transient error: {exc}",
+                error_message=f"Transient error — retry attempt {retry_count + 1}/{self.max_retries}",
             )
-        try:
-            raise self.retry(exc=exc)
-        except MaxRetriesExceededError:
-            with get_sync_session() as db:
-                _set_job_status(
-                    db,
-                    job_id,
-                    status="failed",
-                    progress=100,
-                    error_message=f"Max retries exceeded: {exc}",
-                )
-            raise
+        raise  # let autoretry_for take over
+
+    except MaxRetriesExceededError as exc:
+        with get_sync_session() as db:
+            _set_job_status(
+                db,
+                job_id,
+                status="failed",
+                progress=100,
+                error_message="Max retries exceeded — giving up",
+            )
+        log_event("worker.task", "max_retries_exceeded", task_id=self.request.id, job_id=job_id)
+        raise exc

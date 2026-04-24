@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.logging import log_event
@@ -13,6 +14,21 @@ class APIError(Exception):
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        """Convert Pydantic 422 detail list → our standard {"error": {...}} format."""
+        messages = []
+        for error in exc.errors():
+            msg = error.get("msg", "Validation error")
+            # Strip passlib/pydantic prefix like "Value error, "
+            msg = msg.removeprefix("Value error, ")
+            field = " → ".join(str(loc) for loc in error.get("loc", []) if loc != "body")
+            messages.append(f"{field}: {msg}" if field else msg)
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"code": "validation_error", "message": "; ".join(messages)}},
+        )
+
     @app.exception_handler(APIError)
     async def api_error_handler(_: Request, exc: APIError) -> JSONResponse:
         return JSONResponse(
@@ -33,3 +49,4 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=500,
             content={"error": {"code": "internal_error", "message": "Internal server error"}},
         )
+

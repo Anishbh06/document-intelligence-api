@@ -14,13 +14,18 @@ class Document(Base):
     content_hash: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
-        unique=True,
+        # No longer globally unique — different users can have the same file.
         index=True,
     )
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # owner_id is nullable to preserve backward-compat with rows created before this
+    # migration was applied; in practice all new documents will have an owner.
+    owner_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
     )
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(
@@ -40,7 +45,7 @@ class DocumentChunk(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(768), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
     )
 
     document: Mapped["Document"] = relationship(

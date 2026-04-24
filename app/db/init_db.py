@@ -1,41 +1,19 @@
+"""
+Database initialisation — Alembic-first.
+
+In production/staging Alembic migrations run at container start-up via
+  `alembic upgrade head`
+which is the command in docker-compose.yml for the `api` service.
+
+This file now only enables the pgvector extension (which Alembic also handles
+in the first migration, but idempotent is safe) and is kept as a lifespan hook
+for any future startup checks.
+"""
 from sqlalchemy import text
-
-from app.models.document import Document, DocumentChunk  # noqa: F401
-from app.models.job import Job  # noqa: F401
-from app.db.session import engine, Base
+from app.db.session import engine
 
 
-async def init_db():
+async def init_db() -> None:
+    """Ensure the pgvector extension exists. Schema is managed by Alembic."""
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                "ALTER TABLE documents "
-                "ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"
-            )
-        )
-        await conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_content_hash "
-                "ON documents (content_hash)"
-            )
-        )
-        await conn.execute(
-            text(
-                "ALTER TABLE jobs "
-                "ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"
-            )
-        )
-        await conn.execute(
-            text(
-                "ALTER TABLE jobs "
-                "ADD COLUMN IF NOT EXISTS total_chunks INTEGER DEFAULT 0"
-            )
-        )
-        await conn.execute(
-            text(
-                "ALTER TABLE jobs "
-                "ADD COLUMN IF NOT EXISTS processed_chunks INTEGER DEFAULT 0"
-            )
-        )

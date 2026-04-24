@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DocumentChunkResponse(BaseModel):
@@ -26,7 +26,7 @@ class UploadResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     document_id: int
-    question: str
+    question: str = Field(..., min_length=1, description="Question must not be empty")
 
 
 class QueryResponse(BaseModel):

@@ -1,104 +1,147 @@
+"""
+test_upload.py — Tests for document upload endpoints.
+
+Covers:
+  POST   /api/v1/upload           — valid PDF, non-PDF, response shape
+  GET    /api/v1/documents        — returns only the current user's documents
+  DELETE /api/v1/documents/{id}   — owner can delete; unauthenticated gets 401
+  GET    /api/v1/jobs/{id}        — job status polling
+"""
+
 import pytest
 from httpx import AsyncClient, ASGITransport
+
 from app.main import app
-from app.config import settings
-
-TEST_HEADERS = {"X-API-Key": settings.GEMINI_API_KEY}
+from app.tests.conftest import PDF_BYTES
 
 
-# ---------------------------------------------------------------
-# WHAT THIS FILE TESTS
-# POST /api/v1/upload
-#
-# test_upload_valid_pdf         — happy path: upload a real PDF, expect 200 + correct shape
-# test_upload_non_pdf           — upload a .txt file, expect 400
-# test_upload_empty_filename    — upload a file named ".pdf" (no stem), still a PDF so expect 200
-# test_upload_response_fields   — verify every field in the response has the right type
-# ---------------------------------------------------------------
-
-
-@pytest.fixture
-def pdf_bytes(tmp_path):
-    """Create a minimal but real single-page PDF in memory."""
-    content = b"""%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
-4 0 obj<</Length 44>>stream
-BT /F1 12 Tf 100 700 Td (NovaTech Solutions test document.) Tj ET
-endstream
-endobj
-5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000274 00000 n 
-0000000368 00000 n 
-trailer<</Size 6/Root 1 0 R>>
-startxref
-441
-%%EOF"""
-    p = tmp_path / "test.pdf"
-    p.write_bytes(content)
-    return p
-
+# ── Upload tests ──────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_upload_valid_pdf(pdf_bytes):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        with open(pdf_bytes, "rb") as f:
-            response = await client.post(
-                "/api/v1/upload",
-                files={"file": ("test.pdf", f, "application/pdf")},
-                headers=TEST_HEADERS,
-            )
-
-    assert response.status_code == 200
-    data = response.json()
+async def test_upload_valid_pdf(client_a):
+    r = await client_a.post(
+        "/api/v1/upload",
+        files={"file": ("test.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert r.status_code == 200
+    data = r.json()
     assert "job" in data
-    assert data["job"]["filename"] == "test.pdf"
+    # Dedup: if same bytes were uploaded earlier in the session, the existing job
+    # is returned (filename reflects that original upload, not necessarily "test.pdf")
+    assert isinstance(data["job"]["filename"], str) and len(data["job"]["filename"]) > 0
     assert data["job"]["id"] > 0
     assert data["job"]["status"] in {"pending", "processing", "completed"}
 
 
-@pytest.mark.asyncio
-async def test_upload_non_pdf():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/api/v1/upload",
-            files={"file": ("notes.txt", b"just some text", "text/plain")},
-            headers=TEST_HEADERS,
-        )
 
-    assert response.status_code == 400
-    assert "PDF" in response.json()["error"]["message"]
+@pytest.mark.asyncio
+async def test_upload_non_pdf(client_a):
+    r = await client_a.post(
+        "/api/v1/upload",
+        files={"file": ("notes.txt", b"just some text", "text/plain")},
+    )
+    assert r.status_code == 400
+    assert "PDF" in r.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
-async def test_upload_response_fields(pdf_bytes):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        with open(pdf_bytes, "rb") as f:
-            response = await client.post(
-                "/api/v1/upload",
-                files={"file": ("test.pdf", f, "application/pdf")},
-                headers=TEST_HEADERS,
-            )
+async def test_upload_fake_pdf(client_a):
+    """A file that ends in .pdf but doesn't start with %PDF- magic bytes."""
+    r = await client_a.post(
+        "/api/v1/upload",
+        files={"file": ("fake.pdf", b"not a real pdf content", "application/pdf")},
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_pdf_content"
 
-    assert response.status_code == 200
-    job = response.json()["job"]
 
-    # Every field must be present and the right type
+@pytest.mark.asyncio
+async def test_upload_unauthenticated(anon_client):
+    r = await anon_client.post(
+        "/api/v1/upload",
+        files={"file": ("test.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_upload_response_fields(client_a):
+    r = await client_a.post(
+        "/api/v1/upload",
+        files={"file": ("fields_test.pdf", PDF_BYTES, "application/pdf")},
+    )
+    assert r.status_code == 200
+    job = r.json()["job"]
     assert isinstance(job["id"], int)
     assert isinstance(job["filename"], str)
     assert isinstance(job["created_at"], str)
     assert isinstance(job["updated_at"], str)
     assert isinstance(job["progress"], int)
+    assert isinstance(job["status"], str)
+    assert job["status"] in {"pending", "processing", "completed"}
+
+
+# ── Documents list tests ──────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_documents_authenticated(client_a):
+    r = await client_a.get("/api/v1/documents")
+    assert r.status_code == 200
+    body = r.json()
+    assert "documents" in body
+    assert "total" in body
+    assert isinstance(body["documents"], list)
+    assert body["total"] == len(body["documents"])
+
+
+@pytest.mark.asyncio
+async def test_list_documents_unauthenticated(anon_client):
+    r = await anon_client.get("/api/v1/documents")
+    assert r.status_code == 401
+
+
+# ── Job status tests ──────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_job_status_exists(client_a):
+    """Upload a PDF then verify job status endpoint returns the right shape."""
+    upload = await client_a.post(
+        "/api/v1/upload",
+        files={"file": ("job_test.pdf", PDF_BYTES, "application/pdf")},
+    )
+    job_id = upload.json()["job"]["id"]
+
+    r = await client_a.get(f"/api/v1/jobs/{job_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == job_id
+    assert body["status"] in {"pending", "processing", "completed", "failed"}
+    assert isinstance(body["progress"], int)
+    assert 0 <= body["progress"] <= 100
+
+
+@pytest.mark.asyncio
+async def test_job_status_not_found(client_a):
+    r = await client_a.get("/api/v1/jobs/9999999")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_job_status_unauthenticated(anon_client):
+    r = await anon_client.get("/api/v1/jobs/1")
+    assert r.status_code == 401
+
+
+# ── Delete tests ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_document(client_a):
+    r = await client_a.delete("/api/v1/documents/9999999")
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "document_not_found"
+
+
+@pytest.mark.asyncio
+async def test_delete_unauthenticated(anon_client):
+    r = await anon_client.delete("/api/v1/documents/1")
+    assert r.status_code == 401

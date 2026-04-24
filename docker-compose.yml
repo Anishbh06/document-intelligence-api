@@ -27,6 +27,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot service: runs Alembic migrations then exits (exit code 0).
+  # The api and celery_worker services depend on this completing successfully.
+  migrate:
+    build: .
+    container_name: doc_intel_migrate
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/doc_intelligence
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: alembic upgrade head
+    restart: "no"
+
   api:
     build: .
     container_name: doc_intel_api
@@ -42,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - .:/app
     restart: unless-stopped
@@ -60,6 +80,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - .:/app
     restart: unless-stopped

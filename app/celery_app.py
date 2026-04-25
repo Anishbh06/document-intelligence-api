@@ -33,4 +33,10 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     broker_transport_options=_broker_transport_options,
     redis_backend_use_ssl=_ssl_config if _is_tls else None,
+    # ── Performance: prevent cold-start delays on .delay() ─────────────────
+    broker_connection_timeout=10,       # fail fast if broker unreachable
+    broker_pool_limit=3,                # keep a small connection pool alive
+    result_backend_transport_options={   # backend connection timeout
+        "socket_timeout": 10,
+    },
 )

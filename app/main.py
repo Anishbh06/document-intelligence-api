@@ -15,7 +15,21 @@ from app.middleware.rate_limit import RateLimitMiddleware
 async def lifespan(app: FastAPI):
     configure_logging()
     await init_db()
+
+    # Pre-warm Celery broker connection so first .delay() doesn't block
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        from app.celery_app import celery_app
+        conn = celery_app.connection()
+        conn.ensure_connection(max_retries=2, timeout=5)
+        conn.close()
+        logger.info("✅ Celery broker connection pre-warmed")
+    except Exception as e:
+        logger.warning("⚠️ Celery broker pre-warm failed (tasks will still work): %s", e)
+
     yield
+
 
 
 app = FastAPI(

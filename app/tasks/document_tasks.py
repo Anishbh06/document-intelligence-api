@@ -125,12 +125,22 @@ def _process_document_sync(
                 db,
                 job_id,
                 status="processing",
-                progress=5,
+                progress=10,
                 total_chunks=total_chunks,
                 processed_chunks=0,
             )
 
+
             embeddings = get_embeddings_batch_sync(chunks)
+
+            _set_job_status(
+                db,
+                job_id,
+                status="processing",
+                progress=70,
+                total_chunks=total_chunks,
+                processed_chunks=0,
+            )
 
             document = Document(
                 filename=filename,
@@ -141,25 +151,17 @@ def _process_document_sync(
             db.add(document)
             db.flush()
 
-            for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings), start=1):
+            for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                 db.add(
                     DocumentChunk(
                         document_id=document.id,
-                        chunk_index=idx - 1,
+                        chunk_index=idx,
                         content=chunk,
                         embedding=embedding,
                     )
                 )
-                db.commit()
-                progress = min(99, int((idx / total_chunks) * 100))
-                _set_job_status(
-                    db,
-                    job_id,
-                    status="processing",
-                    progress=progress,
-                    total_chunks=total_chunks,
-                    processed_chunks=idx,
-                )
+
+            db.commit()
 
             _set_job_status(
                 db,

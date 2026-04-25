@@ -60,7 +60,7 @@ app.include_router(jobs.router,   prefix="/api/v1", tags=["Jobs"])
 @app.on_event("startup")
 async def on_startup():
     from app.db.session import engine
-    from app.db.base import Base
+    from app.models.user import Base # Corrected import path
     import logging
 
     logger = logging.getLogger(__name__)

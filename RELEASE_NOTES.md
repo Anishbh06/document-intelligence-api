@@ -1,48 +1,73 @@
-# Release Notes - v3.0.0 (Production Release)
+# 📦 v3.0.0 — Production Grade Release
 
-## 📅 Release Date: April 25, 2026
-
-We are proud to announce the stable release of the Document Intelligence API v3.0.0. This update marks a complete transition from a local prototype to a robust, distributed production system.
+This release transforms the Document Intelligence API from a development prototype into a production-ready system. It introduces a secure authentication layer, strict multi-tenant data isolation, and robust infrastructure configurations for cloud hosting on Render and Vercel.
 
 ---
 
-### 🚀 Major Highlights
+## 🛠 Technology Stack
 
-#### 1. Distributed Background Processing
-We have decoupled document processing from the API request lifecycle. 
-- **The Win:** Uploads are now lightning-fast. The API accepts the file and hands it off to a **Celery** worker immediately.
-- **Infrastructure:** Integrated with **Upstash Redis** for a managed, reliable task broker.
-
-#### 2. Multi-Tenant JWT Security
-Full user management system implemented.
-- **Isolation:** Robust data partitioning ensures users can only access their own files and vectors.
-- **Auth:** Implemented JWT (JSON Web Tokens) with 24-hour expiration and password hashing via Bcrypt.
-
-#### 3. Vector Database Hardening
-- Optimized **pgvector** queries for better similarity search performance.
-- Implemented **Alembic** migrations to ensure schema changes are trackable and safe for production.
-
-#### 4. Frontend Dashboard (Next.js)
-A brand-new, premium web interface built with Next.js 14.
-- **Features:** Real-time job status polling, document library with deletion support, and a sleek chat interface.
-- **Design:** Modern "Glassmorphism" aesthetic with full responsiveness.
+- **API:** FastAPI (Python 3.11)  
+- **Database:** PostgreSQL + pgvector  
+- **Task Queue:** Celery + Redis (Upstash)
+- **Frontend:** Next.js 14 (App Router)  
+- **AI:** Google Gemini (1.5 Flash + text-embedding-004)  
+- **DevOps:** Docker Compose + Alembic Migrations  
 
 ---
 
-### 🛠 Fixes & Improvements
-- **CORS Hardening:** Securely restricted API access to production domains only.
-- **Memory Optimization:** Improved PDF text extraction to handle large documents without crashing the Free Tier instance.
-- **Database Resilience:** Added auto-healing startup scripts that verify database integrity on boot.
-- **Environment Management:** Consolidated all secrets into a unified `.env` structure for easy deployment.
+## ✨ Key Features in v3.0.0
+
+### 🔐 Secure Auth
+- Full JWT authentication flow (Register/Login)  
+- bcrypt password hashing  
+
+### 👥 Multi-Tenancy
+- Every document, chunk, and embedding is tied to a specific `owner_id`  
+- Strict data isolation: Users can only access their own data  
+
+### 🔄 Database Migrations
+- Integrated **Alembic** for versioned schema updates  
+- Automated migration execution on server startup  
+
+### 🚦 Rate Limiting
+- Distributed, Redis-backed rate limiting to protect API resources from abuse  
+
+### 📡 RAG Pipeline
+- High-speed PDF ingestion & text extraction  
+- Semantic chunking for better context retrieval  
+- Vector similarity search (Cosine Distance)  
+- Grounded AI responses with source citations  
+
+### ⚡ Worker Resilience
+- **Celery** background workers with autoretry and exponential backoff  
+- **Redis** broker for reliable task handoff  
 
 ---
 
-### 📦 Deployment Details
-- **Frontend:** [project-7pe5b.vercel.app](https://project-7pe5b.vercel.app)
-- **Backend API:** [document-intelligence-api.onrender.com](https://document-intelligence-api.onrender.com)
-- **Database:** Render Managed PostgreSQL (Free Tier)
-- **Worker/Broker:** Celery + Upstash Redis (Serverless)
+## 🚀 Deployment Fixes
+
+- **Cloud Ready:** Corrected Dockerfile to bind to Render's dynamic `$PORT`  
+- **Secure CORS:** Externalized origins to the `ALLOWED_ORIGINS` environment variable  
+- **Frontend Sync:** Standardized Vercel environment variables for end-to-end connectivity  
 
 ---
+
+## ✅ Verification
+
+### Backend Tests
+- **31 passed** *(Auth, Isolation, Query, Upload)*  
+
+### Frontend Tests
+- **0 TypeScript errors**  
+- **0 Lint warnings**  
+
+### End-to-End
+- Successfully verified through full user journeys (Signup -> Upload -> Background Processing -> Chat)
+
+---
+
+## 🌍 Live Links
+- **Frontend:** [https://project-7pe5b.vercel.app](https://project-7pe5b.vercel.app)
+- **API Docs:** [https://document-intelligence-api.onrender.com/docs](https://document-intelligence-api.onrender.com/docs)
 
 **"Empowering your documents with intelligence."**

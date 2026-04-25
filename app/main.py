@@ -20,20 +20,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Document Intelligence API",
-    description="RAG-powered document Q&A API — async processing with Celery, Redis, and JWT auth",
-    version="3.0.0",
-    lifespan=lifespan,
+    description="Multi-tenant RAG-based document analysis system",
+    version="3.0.0"
 )
 
-app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(RateLimitMiddleware)
-# CORS Configuration
+# 1. BULLETPROOF CORS (MUST BE FIRST)
 origins = [
     "http://localhost:3000",
     "https://project-7pe5b.vercel.app",
 ]
-
-# Add env variable origins
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 if allowed_origins_env:
     if allowed_origins_env == "*":
@@ -49,6 +44,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
+
+# 2. OTHER MIDDLEWARES
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 register_exception_handlers(app)
 

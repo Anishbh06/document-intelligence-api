@@ -108,6 +108,13 @@ def _process_document_sync(
             cleaned = clean_text(raw_text)
             chunks = chunk_text(cleaned)
 
+            # --- Demo / Free Tier Protection ---
+            # Limit to 40 chunks (~20,000 words) to avoid Gemini 429 rate limits.
+            # 40 chunks is plenty for a demo and guarantees fast <15s processing.
+            MAX_CHUNKS = 40
+            if len(chunks) > MAX_CHUNKS:
+                chunks = chunks[:MAX_CHUNKS]
+
             total_chunks = len(chunks)
             if total_chunks == 0:
                 _set_job_status(
@@ -213,23 +220,20 @@ def process_document(
         # autoretry_for handles the actual retry; we just update the job status here.
         retry_count = self.request.retries
         with get_sync_session() as db:
-            _set_job_status(
-                db,
-                job_id,
-                status="pending",
-                progress=0,
-                error_message=f"Transient error — retry attempt {retry_count + 1}/{self.max_retries}",
-            )
+            if retry_count >= self.max_retries:
+                _set_job_status(
+                    db,
+                    job_id,
+                    status="failed",
+                    progress=100,
+                    error_message="Max retries exceeded — giving up",
+                )
+            else:
+                _set_job_status(
+                    db,
+                    job_id,
+                    status="pending",
+                    progress=0,
+                    error_message=f"Transient error — retry attempt {retry_count + 1}/{self.max_retries}",
+                )
         raise  # let autoretry_for take over
-
-    except MaxRetriesExceededError as exc:
-        with get_sync_session() as db:
-            _set_job_status(
-                db,
-                job_id,
-                status="failed",
-                progress=100,
-                error_message="Max retries exceeded — giving up",
-            )
-        log_event("worker.task", "max_retries_exceeded", task_id=self.request.id, job_id=job_id)
-        raise exc

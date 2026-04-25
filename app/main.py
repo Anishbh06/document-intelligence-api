@@ -27,19 +27,29 @@ app = FastAPI(
 
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware)
-# ALLOWED_ORIGINS env var: comma-separated list of origins.
-# e.g.  ALLOWED_ORIGINS=https://my-app.vercel.app,https://custom-domain.com
-# Falls back to localhost only when not set (safe default).
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+# CORS Configuration
+origins = [
+    "http://localhost:3000",
+    "https://project-7pe5b.vercel.app",
+]
+
+# Add env variable origins
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+if allowed_origins_env:
+    if allowed_origins_env == "*":
+        origins = ["*"]
+    else:
+        origins.extend([o.strip() for o in allowed_origins_env.split(",") if o.strip()])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
+
 register_exception_handlers(app)
 
 app.include_router(auth.router,   prefix="/api/v1", tags=["Auth"])

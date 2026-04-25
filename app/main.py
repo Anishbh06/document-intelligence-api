@@ -60,25 +60,15 @@ app.include_router(jobs.router,   prefix="/api/v1", tags=["Jobs"])
 @app.on_event("startup")
 async def on_startup():
     from app.db.session import engine
-    from app.models.user import User
-    from sqlalchemy import inspect
+    from app.db.base import Base
     import logging
 
     logger = logging.getLogger(__name__)
     
-    # Force a check if tables exist
-    def check_and_create():
-        inspector = inspect(engine.sync_engine)
-        if not inspector.has_table("users"):
-            logger.warning("🚀 Table 'users' missing! Forcing creation...")
-            from app.db.base import Base
-            Base.metadata.create_all(bind=engine.sync_engine)
-            logger.info("✅ Database tables created successfully.")
-        else:
-            logger.info("✅ Database tables verified.")
-
-    from anyio import to_thread
-    await to_thread.run_sync(check_and_create)
+    async with engine.begin() as conn:
+        # This is the correct way to run sync commands (like create_all) in an async app
+        await conn.run_sync(Base.metadata.create_all)
+        logger.info("✅ Database tables verified/created.")
 
 
 @app.get("/health")

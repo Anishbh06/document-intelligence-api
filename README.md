@@ -2,6 +2,11 @@
 
 A production-ready, multi-tenant RAG (Retrieval-Augmented Generation) system for PDF document analysis. Built with a modern distributed architecture for high performance and scalability.
 
+**Watch the frontend UI Demo:** https://www.loom.com/share/8380ed4d4ef548418343beb349c47717
+
+> 2-minute walkthrough showing PDF upload, Q&A with citations, and system architecture.
+
+
 **Live Demo:** [https://project-7pe5b.vercel.app](https://project-7pe5b.vercel.app)  
 **Backend API:** [https://document-intelligence-api.onrender.com/docs](https://document-intelligence-api.onrender.com/docs)
 

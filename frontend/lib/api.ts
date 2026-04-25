@@ -9,7 +9,9 @@ import {
 } from "@/lib/types";
 import { clearAuth, getToken } from "@/lib/auth";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const RAW_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Strip trailing slash to prevent double slashes like //api/v1
+const BASE_URL = RAW_URL.endsWith("/") ? RAW_URL.slice(0, -1) : RAW_URL;
 
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
